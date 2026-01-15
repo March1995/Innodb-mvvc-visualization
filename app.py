@@ -96,6 +96,16 @@ def read_data():
     return jsonify(result)
 
 
+@app.route('/api/data/read_with_path', methods=['POST'])
+def read_data_with_path():
+    """读取数据并返回读取路径"""
+    data = request.get_json()
+    trx_id = data.get('trx_id')
+    row_id = data.get('row_id')
+    result = mvcc_system.read_data_with_path(trx_id, row_id)
+    return jsonify(result)
+
+
 @app.route('/api/row/<int:row_id>', methods=['GET'])
 def get_row(row_id):
     """获取数据行信息"""

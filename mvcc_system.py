@@ -140,6 +140,26 @@ class MVCCSystem:
         trx.add_operation('READ', row_id, {'visible': data is not None, 'data': data})
         return {'success': True, 'data': data}
 
+    def read_data_with_path(self, trx_id: int, row_id: int) -> Dict:
+        """读取数据并返回读取路径"""
+        trx = self.transaction_manager.get_transaction(trx_id)
+        if not trx or not trx.is_active():
+            return {'success': False, 'error': 'Transaction not active'}
+
+        # 对于READ COMMITTED隔离级别，每次读取都需要创建新的ReadView
+        if trx.isolation_level == "READ_COMMITTED":
+            active_trx_ids = self.transaction_manager.get_active_trx_ids()
+            current_read_view = ReadView(trx.trx_id, active_trx_ids)
+            data, path = self.data_row_manager.read_row_with_path(row_id, current_read_view)
+        else:
+            # 对于REPEATABLE READ，使用事务开始时创建的ReadView
+            if not trx.read_view:
+                return {'success': False, 'error': 'No ReadView available'}
+            data, path = self.data_row_manager.read_row_with_path(row_id, trx.read_view)
+        
+        trx.add_operation('READ', row_id, {'visible': data is not None, 'data': data})
+        return {'success': True, 'data': data, 'path': path}
+
     def get_system_state(self) -> Dict:
         """获取系统完整状态"""
         return {

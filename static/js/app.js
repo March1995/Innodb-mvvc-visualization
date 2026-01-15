@@ -8,6 +8,11 @@ let systemState = null;
 let selectedRowId = null; // 当前选中的行ID
 let lastModifiedRows = new Set(); // 上次刷新时被修改的行集合
 
+// 全局变量存储路径数据
+let currentPathData = null;
+let currentRowId = null;
+let currentTrxId = null;
+
 // 显示消息提示
 function showMessage(message, type = 'info') {
     const messageEl = document.getElementById('message');
@@ -181,7 +186,7 @@ async function readData() {
     }
 
     try {
-        const response = await fetch(`${API_BASE}/data/read`, {
+        const response = await fetch(`${API_BASE}/data/read_with_path`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ trx_id: trxId, row_id: rowId })
@@ -191,8 +196,16 @@ async function readData() {
         if (result.success) {
             if (result.data) {
                 showMessage(`读取成功: ${JSON.stringify(result.data)}`, 'success');
+                
+                // 显示读取路径（弹窗形式）
+                displayReadPath(result.path, rowId, trxId);
             } else {
                 showMessage('该行数据对当前事务不可见', 'info');
+                
+                // 即使数据不可见，也显示读取路径（弹窗形式）
+                if (result.path) {
+                    displayReadPath(result.path, rowId, trxId);
+                }
             }
         } else {
             showMessage('读取失败: ' + result.error, 'error');
@@ -201,6 +214,193 @@ async function readData() {
         showMessage('读取失败: ' + error.message, 'error');
     }
 }
+
+// 显示读取路径
+function displayReadPath(path, rowId, trxId) {
+    // 保存当前路径数据供导出函数使用
+    currentPathData = path;
+    currentRowId = rowId;
+    currentTrxId = trxId;
+    
+    // 创建弹窗遮罩层
+    let overlay = document.getElementById('readPathOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'readPathOverlay';
+        overlay.className = 'modal-overlay';
+        document.body.appendChild(overlay);
+    }
+
+    // 创建弹窗内容
+    let modal = document.getElementById('readPathModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'readPathModal';
+        modal.className = 'modal-content';
+        document.body.appendChild(modal);
+    }
+
+    // 构建路径显示HTML
+    let pathHtml = `
+        <div class="modal-header">
+            <h3>🔄 读取路径追踪 - 行 #${rowId} (事务 #${trxId})</h3>
+            <button class="btn btn-danger modal-close" onclick="closeReadPathModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="read-path-steps">
+    `;
+
+    path.forEach((step, index) => {
+        let stepClass = '';
+        let stepIcon = '';
+        let stepTitle = '';
+        let stepDetails = '';
+
+        if (step.type === 'current') {
+            stepClass = step.visible ? 'step-visible' : 'step-invisible';
+            stepIcon = step.visible ? '✅' : '❌';
+            stepTitle = `当前版本 - 事务 #${step.trx_id}`;
+            
+            stepDetails = `
+                <div class="step-info"><strong>类型:</strong> 当前版本</div>
+                <div class="step-info"><strong>事务ID:</strong> ${step.trx_id || 'NULL'}</div>
+                <div class="step-info"><strong>可见性:</strong> ${step.visible ? '可见' : '不可见'}</div>
+                <div class="step-info"><strong>可见性原因:</strong> ${step.visibility_reason}</div>
+                ${step.data ? `<div class="step-info"><strong>数据:</strong> ${JSON.stringify(step.data)}</div>` : ''}
+                ${step.deleted ? `<div class="step-info warning"><strong>状态:</strong> 已删除</div>` : ''}
+            `;
+        } else if (step.type === 'undo_log') {
+            stepClass = step.visible ? 'step-visible' : 'step-invisible';
+            stepIcon = step.visible ? '✅' : '❌';
+            stepTitle = `Undo日志 #${step.undo_id} - 事务 #${step.trx_id}`;
+            
+            stepDetails = `
+                <div class="step-info"><strong>类型:</strong> Undo日志</div>
+                <div class="step-info"><strong>Undo ID:</strong> ${step.undo_id}</div>
+                <div class="step-info"><strong>事务ID:</strong> ${step.trx_id}</div>
+                <div class="step-info"><strong>日志类型:</strong> ${step.log_type}</div>
+                <div class="step-info"><strong>可见性:</strong> ${step.visible ? '可见' : '不可见'}</div>
+                <div class="step-info"><strong>可见性原因:</strong> ${step.visibility_reason}</div>
+                <div class="step-info"><strong>Roll Pointer:</strong> ${step.roll_pointer || 'NULL'}</div>
+                ${step.old_value ? `<div class="step-info"><strong>旧值:</strong> ${JSON.stringify(step.old_value)}</div>` : ''}
+                ${step.new_value ? `<div class="step-info"><strong>新值:</strong> ${JSON.stringify(step.new_value)}</div>` : ''}
+            `;
+        } else if (step.type === 'missing_undo') {
+            stepClass = 'step-error';
+            stepIcon = '⚠️';
+            stepTitle = `缺失Undo日志 - ID #${step.undo_id}`;
+            
+            stepDetails = `
+                <div class="step-info error"><strong>错误:</strong> ${step.error}</div>
+            `;
+        }
+
+        pathHtml += `
+            <div class="read-path-step ${stepClass}">
+                <div class="step-header">
+                    <span class="step-icon">${stepIcon}</span>
+                    <span class="step-title">${stepTitle}</span>
+                    <span class="step-index">#${index + 1}</span>
+                </div>
+                <div class="step-details">
+                    ${stepDetails}
+                </div>
+            </div>
+        `;
+    });
+
+    pathHtml += `
+            </div>
+            <div class="path-summary">
+                <p><strong>总步数:</strong> ${path.length} 步</p>
+                <p><small>✅ = 可见, ❌ = 不可见, ⚠️ = 错误</small></p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-info" onclick="exportReadPath()">导出路径</button>
+            <button class="btn btn-secondary" onclick="closeReadPathModal()">关闭</button>
+        </div>
+    `;
+
+    modal.innerHTML = pathHtml;
+    overlay.style.display = 'block';
+    modal.style.display = 'block';
+}
+
+// 导出读取路径
+function exportReadPath() {
+    if (!currentPathData) {
+        showMessage('没有可导出的路径数据', 'error');
+        return;
+    }
+    
+    const pathData = currentPathData;
+    const rowId = currentRowId;
+    const trxId = currentTrxId;
+    
+    // 创建导出内容
+    let exportContent = `MVCC 读取路径追踪报告\n`;
+    exportContent += `==================\n`;
+    exportContent += `行ID: ${rowId}\n`;
+    exportContent += `事务ID: ${trxId}\n`;
+    exportContent += `导出时间: ${new Date().toLocaleString()}\n\n`;
+    exportContent += `读取路径详情:\n`;
+    exportContent += `-------------\n`;
+    
+    pathData.forEach((step, index) => {
+        exportContent += `步骤${index + 1}: ${step.type}\n`;
+        if (step.type === 'current') {
+            exportContent += `  事务ID: ${step.trx_id || 'NULL'}\n`;
+            exportContent += `  可见性: ${step.visible ? '可见' : '不可见'}\n`;
+            exportContent += `  可见性原因: ${step.visibility_reason}\n`;
+            if (step.data) exportContent += `  数据: ${JSON.stringify(step.data)}\n`;
+            if (step.deleted) exportContent += `  状态: 已删除\n`;
+        } else if (step.type === 'undo_log') {
+            exportContent += `  Undo ID: ${step.undo_id}\n`;
+            exportContent += `  事务ID: ${step.trx_id}\n`;
+            exportContent += `  日志类型: ${step.log_type}\n`;
+            exportContent += `  可见性: ${step.visible ? '可见' : '不可见'}\n`;
+            exportContent += `  可见性原因: ${step.visibility_reason}\n`;
+            exportContent += `  Roll Pointer: ${step.roll_pointer || 'NULL'}\n`;
+            if (step.old_value) exportContent += `  旧值: ${JSON.stringify(step.old_value)}\n`;
+            if (step.new_value) exportContent += `  新值: ${JSON.stringify(step.new_value)}\n`;
+        } else if (step.type === 'missing_undo') {
+            exportContent += `  错误: ${step.error}\n`;
+        }
+        exportContent += `\n`;
+    });
+    
+    exportContent += `总步数: ${pathData.length}\n`;
+    
+    // 创建下载链接
+    const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `read_path_row_${rowId}_trx_${trxId}_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showMessage('读取路径已导出', 'success');
+}
+
+// 关闭读取路径弹窗
+function closeReadPathModal() {
+    const overlay = document.getElementById('readPathOverlay');
+    const modal = document.getElementById('readPathModal');
+    
+    if (overlay) overlay.style.display = 'none';
+    if (modal) modal.style.display = 'none';
+}
+
+// 添加键盘事件监听，ESC关闭弹窗
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeReadPathModal();
+    }
+});
 
 // 提交指定事务
 async function commitSpecificTransaction() {

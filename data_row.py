@@ -53,9 +53,9 @@ class VersionChain:
         }
         self.versions.append(version)
 
-    def get_visible_version(self, read_view: ReadView, undo_logs: Dict[int, UndoLog]) -> Optional[Dict[str, Any]]:
+    def get_visible_version_with_path(self, read_view: ReadView, undo_logs: Dict[int, UndoLog]) -> tuple:
         """
-        根据ReadView获取可见的数据版本
+        根据ReadView获取可见的数据版本，并返回读取路径
         通过Undo日志链回溯找到第一个可见的版本
 
         关键理解：
@@ -63,12 +63,24 @@ class VersionChain:
         - Undo日志记录的是历史版本
         - 回溯时，我们需要找到第一个可见的事务，并返回该事务修改后的数据
         """
+        path = []  # 记录读取路径
+        
         # 检查当前版本是否可见
-        if self.row.trx_id and read_view.is_visible(self.row.trx_id):
+        current_version_info = {
+            'type': 'current',
+            'trx_id': self.row.trx_id,
+            'data': self.row.data.copy() if self.row.data else None,
+            'deleted': self.row.deleted,
+            'visible': self.row.trx_id and read_view.is_visible(self.row.trx_id),
+            'visibility_reason': self._explain_visibility(read_view, self.row.trx_id) if self.row.trx_id else 'No transaction ID'
+        }
+        path.append(current_version_info)
+        
+        if current_version_info['visible']:
             if not self.row.deleted:
-                return self.row.data.copy()
+                return self.row.data.copy(), path
             else:
-                return None  # 已删除
+                return None, path  # 已删除
 
         # 沿着Undo链回溯，寻找第一个可见的版本
         current_undo_id = self.row.roll_pointer
@@ -77,37 +89,78 @@ class VersionChain:
         while current_undo_id is not None:
             undo_log = undo_logs.get(current_undo_id)
             if undo_log is None:
+                path.append({
+                    'type': 'missing_undo',
+                    'undo_id': current_undo_id,
+                    'error': 'Undo log not found'
+                })
                 break
 
             # 检查该Undo日志对应的事务是否可见
-            if read_view.is_visible(undo_log.trx_id):
+            visible = read_view.is_visible(undo_log.trx_id)
+            visibility_reason = self._explain_visibility(read_view, undo_log.trx_id)
+            
+            undo_info = {
+                'type': 'undo_log',
+                'undo_id': undo_log.undo_id,
+                'trx_id': undo_log.trx_id,
+                'log_type': undo_log.log_type.value,
+                'old_value': undo_log.old_value.copy() if undo_log.old_value else None,
+                'new_value': undo_log.new_value.copy() if undo_log.new_value else None,
+                'roll_pointer': undo_log.roll_pointer,
+                'visible': visible,
+                'visibility_reason': visibility_reason
+            }
+            path.append(undo_info)
+
+            if visible:
                 # 找到第一个可见的事务
                 # 需要返回该事务修改后的数据
 
                 if undo_log.log_type == UndoLogType.INSERT:
                     # INSERT操作：new_value是插入的数据
-                    return undo_log.new_value.copy() if undo_log.new_value else None
+                    return undo_log.new_value.copy() if undo_log.new_value else None, path
 
                 elif undo_log.log_type == UndoLogType.UPDATE:
                     # UPDATE操作：需要返回该事务修改后的数据
                     # 如果有前一个Undo日志（更新的版本），则返回前一个的old_value
                     # 否则返回当前Undo的new_value
                     if prev_undo_log and prev_undo_log.old_value:
-                        return prev_undo_log.old_value.copy()
+                        return prev_undo_log.old_value.copy(), path
                     elif undo_log.new_value:
-                        return undo_log.new_value.copy()
+                        return undo_log.new_value.copy(), path
                     else:
-                        return undo_log.old_value.copy() if undo_log.old_value else None
+                        return undo_log.old_value.copy() if undo_log.old_value else None, path
 
                 elif undo_log.log_type == UndoLogType.DELETE:
                     # DELETE操作：该版本已被删除
-                    return None
+                    return None, path
 
             # 继续回溯到更早的版本
             prev_undo_log = undo_log
             current_undo_id = undo_log.roll_pointer
 
-        return None  # 没有可见版本
+        return None, path  # 没有可见版本
+
+    def _explain_visibility(self, read_view: ReadView, trx_id: int) -> str:
+        """解释可见性判断的原因"""
+        if trx_id == read_view.creator_trx_id:
+            return f'trx_id == creator_trx_id ({trx_id} == {read_view.creator_trx_id}) -> 可见（自己修改的数据）'
+        elif trx_id < read_view.min_trx_id:
+            return f'trx_id < min_trx_id ({trx_id} < {read_view.min_trx_id}) -> 可见（ReadView创建前已提交）'
+        elif trx_id > read_view.max_trx_id:
+            return f'trx_id > max_trx_id ({trx_id} > {read_view.max_trx_id}) -> 不可见（ReadView创建后才开始）'
+        elif trx_id in read_view.m_ids:
+            return f'trx_id in m_ids ({trx_id} in {read_view.m_ids}) -> 不可见（创建ReadView时还未提交）'
+        else:
+            return f'trx_id not in m_ids ({trx_id} not in {read_view.m_ids}) -> 可见（创建ReadView时已提交）'
+
+    def get_visible_version(self, read_view: ReadView, undo_logs: Dict[int, UndoLog]) -> Optional[Dict[str, Any]]:
+        """
+        根据ReadView获取可见的数据版本（兼容原方法）
+        """
+        result, _ = self.get_visible_version_with_path(read_view, undo_logs)
+        return result
 
     def to_dict(self):
         """转换为字典格式"""
@@ -200,6 +253,17 @@ class DataRowManager:
             return None
 
         return version_chain.get_visible_version(read_view, self.undo_log_manager.undo_logs)
+
+    def read_row_with_path(self, row_id: int, read_view: ReadView) -> tuple:
+        """根据ReadView读取行数据，并返回读取路径"""
+        if row_id not in self.rows:
+            return None, []
+
+        version_chain = self.version_chains.get(row_id)
+        if version_chain is None:
+            return None, []
+
+        return version_chain.get_visible_version_with_path(read_view, self.undo_log_manager.undo_logs)
 
     def get_row(self, row_id: int) -> Optional[DataRow]:
         """获取行"""
