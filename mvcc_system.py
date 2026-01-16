@@ -40,62 +40,84 @@ class MVCCSystem:
         return {'success': success, 'trx_id': trx_id}
 
     def _rollback_row_changes(self, trx_id: int, row_id: int):
-        """回滚某行的修改"""
+        """回滚某行的该事务的所有修改"""
         row = self.data_row_manager.get_row(row_id)
         if not row:
             return
 
-        # 如果当前行的最后修改事务不是要回滚的事务，则不需要回滚
-        if row.trx_id != trx_id:
+        # 收集该事务对这一行的所有Undo日志
+        trx_undo_logs = []
+        if row_id in self.undo_log_manager.row_undo_chains:
+            undo_ids = self.undo_log_manager.row_undo_chains[row_id]
+            for undo_id in undo_ids:
+                undo_log = self.undo_log_manager.get_undo_log(undo_id)
+                if undo_log and undo_log.trx_id == trx_id:
+                    trx_undo_logs.append(undo_log)
+
+        # 如果没有该事务的Undo日志，不需要回滚
+        if not trx_undo_logs:
             return
 
-        # 通过Undo日志恢复数据
-        if row.roll_pointer:
-            undo_log = self.undo_log_manager.get_undo_log(row.roll_pointer)
-            if undo_log:
-                if undo_log.log_type.value == 'INSERT':
-                    # INSERT操作回滚：完全删除该行及其版本链
-                    self.data_row_manager.rows.pop(row_id, None)
-                    # 完全删除版本链
-                    self.data_row_manager.version_chains.pop(row_id, None)
-                    # 删除该行的所有Undo日志
-                    self._cleanup_undo_logs(row_id)
-                elif undo_log.log_type.value == 'UPDATE':
-                    # UPDATE操作回滚：恢复旧值
-                    if undo_log.old_value:
-                        row.data = undo_log.old_value.copy()
-                        row.trx_id = undo_log.trx_id if undo_log.roll_pointer else None
-                        row.roll_pointer = undo_log.roll_pointer
-                        # 从版本链中移除最新版本
-                        if row_id in self.data_row_manager.version_chains:
-                            version_chain = self.data_row_manager.version_chains[row_id]
-                            if version_chain.versions:
-                                version_chain.versions.pop()
-                        # 删除当前Undo日志
-                        self._remove_undo_log(undo_log.undo_id)
-                elif undo_log.log_type.value == 'DELETE':
-                    # DELETE操作回滚：恢复删除标记
-                    row.deleted = False
-                    if undo_log.old_value:
-                        row.data = undo_log.old_value.copy()
-                    row.trx_id = undo_log.trx_id if undo_log.roll_pointer else None
+        # 按undo_id降序排列（从最新到最早）
+        trx_undo_logs.sort(key=lambda x: x.undo_id, reverse=True)
+
+        # 逐个回滚该事务的所有操作
+        for undo_log in trx_undo_logs:
+            if undo_log.log_type.value == 'INSERT':
+                # INSERT操作回滚：完全删除该行及其版本链
+                self.data_row_manager.rows.pop(row_id, None)
+                # 完全删除版本链
+                self.data_row_manager.version_chains.pop(row_id, None)
+                # 删除该事务的所有Undo日志
+                for log in trx_undo_logs:
+                    self._remove_undo_log(log.undo_id)
+                return  # INSERT回滚后，该行不存在，直接返回
+
+            elif undo_log.log_type.value == 'UPDATE':
+                # UPDATE操作回滚：恢复旧值
+                if undo_log.old_value:
+                    row.data = undo_log.old_value.copy()
+                    row.trx_id = undo_log.trx_id
                     row.roll_pointer = undo_log.roll_pointer
-                    # 删除当前Undo日志
+                    # 从版本链中移除该版本
+                    if row_id in self.data_row_manager.version_chains:
+                        version_chain = self.data_row_manager.version_chains[row_id]
+                        if version_chain.versions:
+                            # 移除该事务创建的版本
+                            version_chain.versions = [
+                                v for v in version_chain.versions
+                                if v.get('trx_id') != trx_id
+                            ]
+                    # 删除该Undo日志
                     self._remove_undo_log(undo_log.undo_id)
-        else:
-            # 对于INSERT操作，roll_pointer为None的情况
-            # 检查是否有INSERT类型的Undo日志
-            undo_chain = self.undo_log_manager.get_undo_chain(row_id)
-            if undo_chain:
-                # 找到最后一个Undo日志
-                last_undo = undo_chain[-1]
-                if last_undo.log_type.value == 'INSERT' and last_undo.trx_id == trx_id:
-                    # INSERT操作回滚：完全删除该行及其版本链
-                    self.data_row_manager.rows.pop(row_id, None)
-                    # 完全删除版本链
-                    self.data_row_manager.version_chains.pop(row_id, None)
-                    # 删除该行的所有Undo日志
-                    self._cleanup_undo_logs(row_id)
+
+            elif undo_log.log_type.value == 'DELETE':
+                # DELETE操作回滚：恢复删除标记
+                row.deleted = False
+                if undo_log.old_value:
+                    row.data = undo_log.old_value.copy()
+                row.trx_id = undo_log.trx_id
+                row.roll_pointer = undo_log.roll_pointer
+                # 删除该Undo日志
+                self._remove_undo_log(undo_log.undo_id)
+
+        # 回滚完成后，需要找到该行最后一个非该事务的Undo日志，更新row的状态
+        if row_id in self.undo_log_manager.row_undo_chains:
+            remaining_undo_ids = self.undo_log_manager.row_undo_chains[row_id]
+            if remaining_undo_ids:
+                # 找到最新的Undo日志
+                latest_undo_id = max(remaining_undo_ids)
+                latest_undo = self.undo_log_manager.get_undo_log(latest_undo_id)
+                if latest_undo:
+                    row.trx_id = latest_undo.trx_id
+                    row.roll_pointer = latest_undo_id
+                    # 恢复到最新Undo日志的新值
+                    if latest_undo.new_value:
+                        row.data = latest_undo.new_value.copy()
+            else:
+                # 没有剩余的Undo日志，说明该行应该被删除
+                self.data_row_manager.rows.pop(row_id, None)
+                self.data_row_manager.version_chains.pop(row_id, None)
 
     def _cleanup_undo_logs(self, row_id: int):
         """清理某行的所有Undo日志"""
