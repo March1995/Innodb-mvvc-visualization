@@ -54,13 +54,12 @@ class MVCCSystem:
             undo_log = self.undo_log_manager.get_undo_log(row.roll_pointer)
             if undo_log:
                 if undo_log.log_type.value == 'INSERT':
-                    # INSERT操作回滚：删除该行
+                    # INSERT操作回滚：完全删除该行及其版本链
                     self.data_row_manager.rows.pop(row_id, None)
-                    # 从版本链中移除最新版本
-                    if row_id in self.data_row_manager.version_chains:
-                        version_chain = self.data_row_manager.version_chains[row_id]
-                        if version_chain.versions:
-                            version_chain.versions.pop()
+                    # 完全删除版本链
+                    self.data_row_manager.version_chains.pop(row_id, None)
+                    # 删除该行的所有Undo日志
+                    self._cleanup_undo_logs(row_id)
                 elif undo_log.log_type.value == 'UPDATE':
                     # UPDATE操作回滚：恢复旧值
                     if undo_log.old_value:
@@ -72,6 +71,8 @@ class MVCCSystem:
                             version_chain = self.data_row_manager.version_chains[row_id]
                             if version_chain.versions:
                                 version_chain.versions.pop()
+                        # 删除当前Undo日志
+                        self._remove_undo_log(undo_log.undo_id)
                 elif undo_log.log_type.value == 'DELETE':
                     # DELETE操作回滚：恢复删除标记
                     row.deleted = False
@@ -79,6 +80,42 @@ class MVCCSystem:
                         row.data = undo_log.old_value.copy()
                     row.trx_id = undo_log.trx_id if undo_log.roll_pointer else None
                     row.roll_pointer = undo_log.roll_pointer
+                    # 删除当前Undo日志
+                    self._remove_undo_log(undo_log.undo_id)
+        else:
+            # 对于INSERT操作，roll_pointer为None的情况
+            # 检查是否有INSERT类型的Undo日志
+            undo_chain = self.undo_log_manager.get_undo_chain(row_id)
+            if undo_chain:
+                # 找到最后一个Undo日志
+                last_undo = undo_chain[-1]
+                if last_undo.log_type.value == 'INSERT' and last_undo.trx_id == trx_id:
+                    # INSERT操作回滚：完全删除该行及其版本链
+                    self.data_row_manager.rows.pop(row_id, None)
+                    # 完全删除版本链
+                    self.data_row_manager.version_chains.pop(row_id, None)
+                    # 删除该行的所有Undo日志
+                    self._cleanup_undo_logs(row_id)
+
+    def _cleanup_undo_logs(self, row_id: int):
+        """清理某行的所有Undo日志"""
+        if row_id in self.undo_log_manager.row_undo_chains:
+            undo_ids = self.undo_log_manager.row_undo_chains[row_id].copy()
+            for undo_id in undo_ids:
+                self.undo_log_manager.undo_logs.pop(undo_id, None)
+            self.undo_log_manager.row_undo_chains.pop(row_id, None)
+
+    def _remove_undo_log(self, undo_id: int):
+        """删除指定的Undo日志"""
+        if undo_id in self.undo_log_manager.undo_logs:
+            undo_log = self.undo_log_manager.undo_logs[undo_id]
+            row_id = undo_log.row_id
+            # 从undo_logs中删除
+            self.undo_log_manager.undo_logs.pop(undo_id, None)
+            # 从row_undo_chains中删除
+            if row_id in self.undo_log_manager.row_undo_chains:
+                if undo_id in self.undo_log_manager.row_undo_chains[row_id]:
+                    self.undo_log_manager.row_undo_chains[row_id].remove(undo_id)
 
     def insert_data(self, trx_id: int, data: Dict[str, Any]) -> Dict:
         """插入数据"""
@@ -129,14 +166,18 @@ class MVCCSystem:
         # 对于READ COMMITTED隔离级别，每次读取都需要创建新的ReadView
         if trx.isolation_level == "READ_COMMITTED":
             active_trx_ids = self.transaction_manager.get_active_trx_ids()
-            current_read_view = ReadView(trx.trx_id, active_trx_ids)
+            # 使用Transaction._next_trx_id作为max_trx_id
+            from transaction import Transaction
+            current_read_view = ReadView(trx.trx_id, active_trx_ids, Transaction._next_trx_id)
             data = self.data_row_manager.read_row(row_id, current_read_view)
         else:
-            # 对于REPEATABLE READ，使用事务开始时创建的ReadView
+            # 对于REPEATABLE READ，第一次读取时创建ReadView，之后复用
             if not trx.read_view:
-                return {'success': False, 'error': 'No ReadView available'}
+                active_trx_ids = self.transaction_manager.get_active_trx_ids()
+                from transaction import Transaction
+                trx.read_view = ReadView(trx.trx_id, active_trx_ids, Transaction._next_trx_id)
             data = self.data_row_manager.read_row(row_id, trx.read_view)
-        
+
         trx.add_operation('READ', row_id, {'visible': data is not None, 'data': data})
         return {'success': True, 'data': data}
 
@@ -149,14 +190,18 @@ class MVCCSystem:
         # 对于READ COMMITTED隔离级别，每次读取都需要创建新的ReadView
         if trx.isolation_level == "READ_COMMITTED":
             active_trx_ids = self.transaction_manager.get_active_trx_ids()
-            current_read_view = ReadView(trx.trx_id, active_trx_ids)
+            # 使用Transaction._next_trx_id作为max_trx_id
+            from transaction import Transaction
+            current_read_view = ReadView(trx.trx_id, active_trx_ids, Transaction._next_trx_id)
             data, path = self.data_row_manager.read_row_with_path(row_id, current_read_view)
         else:
-            # 对于REPEATABLE READ，使用事务开始时创建的ReadView
+            # 对于REPEATABLE READ，第一次读取时创建ReadView，之后复用
             if not trx.read_view:
-                return {'success': False, 'error': 'No ReadView available'}
+                active_trx_ids = self.transaction_manager.get_active_trx_ids()
+                from transaction import Transaction
+                trx.read_view = ReadView(trx.trx_id, active_trx_ids, Transaction._next_trx_id)
             data, path = self.data_row_manager.read_row_with_path(row_id, trx.read_view)
-        
+
         trx.add_operation('READ', row_id, {'visible': data is not None, 'data': data})
         return {'success': True, 'data': data, 'path': path}
 
@@ -188,4 +233,14 @@ class MVCCSystem:
 
     def reset(self):
         """重置系统"""
+        # 重置所有ID计数器
+        from transaction import Transaction
+        from data_row import DataRow
+        from undo_log import UndoLog
+
+        Transaction._next_trx_id = 1
+        DataRow._next_row_id = 1
+        UndoLog._next_undo_id = 1
+
+        # 重新初始化系统
         self.__init__()

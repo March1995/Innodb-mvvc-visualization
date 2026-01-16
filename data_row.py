@@ -189,10 +189,14 @@ class DataRowManager:
         version_chain.add_version(trx_id, data)
         self.version_chains[row.row_id] = version_chain
 
-        # 创建INSERT类型的Undo日志
+        # 创建INSERT类型的Undo日志（用于回滚INSERT操作）
+        # INSERT的Undo日志不需要roll_pointer，因为没有更早的版本
         undo_log = self.undo_log_manager.create_undo_log(
-            UndoLogType.INSERT, trx_id, row.row_id, None, data
+            UndoLogType.INSERT, trx_id, row.row_id, None, data, None
         )
+
+        # 重要：row.roll_pointer指向INSERT的Undo日志
+        # 这样后续UPDATE时可以通过old_roll_pointer获取到INSERT的Undo日志ID
         row.roll_pointer = undo_log.undo_id
 
         return row
@@ -204,16 +208,20 @@ class DataRowManager:
 
         row = self.rows[row_id]
         old_data = row.data.copy()
+        old_roll_pointer = row.roll_pointer  # 保存旧的roll_pointer
 
         # 创建UPDATE类型的Undo日志
+        # Undo日志的roll_pointer指向更早的版本
         undo_log = self.undo_log_manager.create_undo_log(
-            UndoLogType.UPDATE, trx_id, row_id, old_data, new_data, row.roll_pointer
+            UndoLogType.UPDATE, trx_id, row_id, old_data, new_data, old_roll_pointer
         )
 
         # 更新行数据
+        # 关键：row.roll_pointer应该指向本次UPDATE创建的Undo日志
+        # 这样可以通过Undo日志的roll_pointer继续回溯到更早的版本
         row.data = new_data
         row.trx_id = trx_id
-        row.roll_pointer = undo_log.undo_id
+        row.roll_pointer = undo_log.undo_id  # 指向本次UPDATE的Undo日志
         row.update_time = datetime.now()
 
         # 添加到版本链

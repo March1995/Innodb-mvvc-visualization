@@ -214,6 +214,60 @@ header h1 {
     min-width: 100px;
 }
 
+/* 数据操作新布局 */
+.operation-section {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f7fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.operation-section h3 {
+    color: #667eea;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.read-result-display {
+    margin: 15px 0;
+    padding: 12px;
+    background: #f0fff4;
+    border: 1px solid #48bb78;
+    border-radius: 5px;
+}
+
+.read-result-display h4 {
+    margin: 0 0 8px 0;
+    color: #2f855a;
+    font-size: 1em;
+}
+
+.read-result-content {
+    font-family: monospace;
+    background: white;
+    padding: 8px;
+    border-radius: 3px;
+    border: 1px solid #c3dafe;
+    word-break: break-all;
+    max-height: 100px;
+    overflow-y: auto;
+}
+
+.checkbox-inline {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.checkbox-inline input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+    width: auto;
+}
+
 /* 事务列表 */
 .transaction-list {
     max-height: 300px;
@@ -942,6 +996,118 @@ header h1 {
     font-weight: 600;
 }
 
+/* 版本链表格样式 */
+.version-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    margin-top: 10px;
+}
+
+.version-table thead {
+    background: #667eea;
+    color: white;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.version-table th {
+    padding: 8px 6px;
+    text-align: left;
+    font-weight: 600;
+    border: 1px solid #5568d3;
+    white-space: nowrap;
+    font-size: 0.8em;
+}
+
+.version-table th.innodb-col {
+    background: #4299e1;
+    border-color: #3182ce;
+}
+
+.version-table th.user-col {
+    background: #667eea;
+}
+
+.version-table th.status-col {
+    background: #48bb78;
+    border-color: #38a169;
+}
+
+.version-table tbody tr {
+    transition: background-color 0.2s;
+}
+
+.version-table tbody tr:nth-child(even) {
+    background: #f7fafc;
+}
+
+.version-table tbody tr:hover {
+    background: #edf2f7;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+}
+
+.version-table td {
+    padding: 6px 6px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+    font-size: 0.85em;
+}
+
+.version-table td.innodb-value {
+    font-weight: bold;
+    color: #2c5282;
+    background: #ebf8ff;
+}
+
+.version-table td.user-value {
+    color: #2d3748;
+    font-family: monospace;
+}
+
+.version-table td.null-value {
+    color: #a0aec0;
+    font-style: italic;
+}
+
+.version-table td.status-value {
+    font-weight: 600;
+    text-align: center;
+}
+
+.version-table td.active-status {
+    color: #38a169;
+}
+
+.version-table td.deleted-status {
+    color: #e53e3e;
+}
+
+/* MySQL-style borders */
+.version-table {
+    border: 2px solid #4a5568;
+}
+
+.version-table th:first-child,
+.version-table td:first-child {
+    border-left: 2px solid #4a5568;
+}
+
+.version-table th:last-child,
+.version-table td:last-child {
+    border-right: 2px solid #4a5568;
+}
+
+.version-table thead tr {
+    border-bottom: 2px solid #4a5568;
+}
+
+.version-table tbody tr:last-child td {
+    border-bottom: 2px solid #4a5568;
+}
+
 /* Legacy version node styles (for backward compatibility) */
 .version-node {
     background: white;
@@ -1063,6 +1229,151 @@ header h1 {
     background: white;
     padding: 8px;
     border-radius: 3px;
+}
+
+/* 版本链容器样式 */
+.undo-chain-container {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.undo-chain-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.undo-chain-header h4 {
+    color: #2d3748;
+    font-size: 1.1em;
+    margin: 0;
+}
+
+.undo-chain-count {
+    background: #667eea;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.undo-chain-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.undo-log-with-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.undo-log-with-arrow .undo-log {
+    margin-bottom: 0;
+}
+
+.version-chain-arrow {
+    text-align: center;
+    font-size: 1.5em;
+    color: #667eea;
+    padding: 5px 0;
+    font-weight: bold;
+}
+
+/* Undo Log Header 样式 */
+.undo-log-header-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 15px;
+    border-radius: 8px 8px 0 0;
+    margin: -10px -10px 0 -10px;
+}
+
+.undo-log-header-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.undo-log-id {
+    font-size: 0.9em;
+    font-weight: 600;
+    opacity: 0.95;
+}
+
+.undo-log-header-fields {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.header-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.field-label {
+    font-size: 0.7em;
+    text-transform: uppercase;
+    opacity: 0.8;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.field-value {
+    font-size: 0.95em;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+}
+
+/* Undo Log Body 样式 */
+.undo-log-body {
+    padding: 12px 15px;
+    background: #fefefe;
+}
+
+.undo-log {
+    background: #fffbeb;
+    border: 2px solid #667eea;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 0;
+}
+
+/* 调整操作类型标签在Header中的样式 */
+.undo-log-header-section .undo-log-type {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.undo-log-header-section .undo-log-type.INSERT {
+    background: rgba(72, 187, 120, 0.9);
+}
+
+.undo-log-header-section .undo-log-type.UPDATE {
+    background: rgba(237, 137, 54, 0.9);
+}
+
+.undo-log-header-section .undo-log-type.DELETE {
+    background: rgba(245, 101, 101, 0.9);
 }
 
 /* 消息提示 */

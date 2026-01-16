@@ -83,11 +83,11 @@ class ReadView:
     用于实现MVCC的可见性判断
     """
 
-    def __init__(self, creator_trx_id: int, active_trx_ids: List[int]):
+    def __init__(self, creator_trx_id: int, active_trx_ids: List[int], max_trx_id: int):
         self.creator_trx_id = creator_trx_id  # 创建该ReadView的事务ID
         self.m_ids = sorted(active_trx_ids)  # 创建ReadView时活跃的事务ID列表
         self.min_trx_id = min(active_trx_ids) if active_trx_ids else creator_trx_id  # 最小活跃事务ID
-        self.max_trx_id = max(active_trx_ids) if active_trx_ids else creator_trx_id  # 最大活跃事务ID
+        self.max_trx_id = max_trx_id  # 系统中下一个将要分配的事务ID
         self.create_time = datetime.now()
 
     def is_visible(self, trx_id: int) -> bool:
@@ -97,8 +97,8 @@ class ReadView:
         可见性规则：
         1. trx_id == creator_trx_id: 可见（自己修改的数据）
         2. trx_id < min_trx_id: 可见（在ReadView创建前已提交）
-        3. trx_id > max_trx_id: 不可见（在ReadView创建后才开始）
-        4. min_trx_id <= trx_id <= max_trx_id:
+        3. trx_id >= max_trx_id: 不可见（在ReadView创建后才开始的事务）
+        4. min_trx_id <= trx_id < max_trx_id:
            - 如果trx_id在m_ids中: 不可见（创建ReadView时还未提交）
            - 如果trx_id不在m_ids中: 可见（创建ReadView时已提交）
         """
@@ -108,7 +108,7 @@ class ReadView:
         if trx_id < self.min_trx_id:
             return True
 
-        if trx_id > self.max_trx_id:
+        if trx_id >= self.max_trx_id:
             return False
 
         return trx_id not in self.m_ids
@@ -137,10 +137,10 @@ class TransactionManager:
         trx = Transaction(isolation_level)
         self.active_transactions.append(trx)
 
-        # 为事务创建ReadView（根据隔离级别）
-        if isolation_level in ["READ_COMMITTED", "REPEATABLE_READ"]:
-            active_trx_ids = [t.trx_id for t in self.active_transactions]
-            trx.read_view = ReadView(trx.trx_id, active_trx_ids)
+        # 注意：根据InnoDB的实现，ReadView应该在第一次SELECT时创建，而不是在事务开启时
+        # READ COMMITTED: 每次SELECT都创建新的ReadView
+        # REPEATABLE READ: 第一次SELECT时创建ReadView，之后复用
+        # 因此这里不再预先创建ReadView
 
         return trx
 

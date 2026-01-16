@@ -71,24 +71,43 @@
 
                 <div class="panel">
                     <h2>数据操作</h2>
+                    
                     <div class="control-group">
                         <label>事务ID:</label>
                         <input type="number" id="opTrxId" placeholder="输入事务ID">
                     </div>
-                    <div class="control-group">
-                        <label>行ID (更新/删除/读取):</label>
-                        <input type="number" id="opRowId" placeholder="输入行ID">
-                    </div>
+                    
                     <div class="control-group">
                         <label>数据 (JSON格式):</label>
                         <textarea id="opData" placeholder='{ "name": "张三", "age": 25, "department": "技术部", "salary": 8000 }'>{ "name": "张三", "age": 25, "department": "技术部", "salary": 8000 }</textarea>
                     </div>
+                    
+                    <div class="control-group">
+                        <label>行ID (更新/删除/读取):</label>
+                        <input type="number" id="opRowId" placeholder="输入行ID">
+                    </div>
+                    
+                    <!-- 读取路径追踪选项 -->
+                    <div class="control-group">
+                        <label class="checkbox-inline">
+                            <input type="checkbox" id="showReadPath" checked> 
+                            显示读取路径追踪弹窗
+                        </label>
+                    </div>
+                    
+                    <!-- 读取结果展示区域 -->
+                    <div id="readResult" class="read-result-display" style="display: none;">
+                        <h4>读取结果:</h4>
+                        <div id="readResultContent"></div>
+                    </div>
+                    
                     <div class="button-group">
                         <button class="btn btn-success" onclick="insertData()">插入</button>
                         <button class="btn btn-warning" onclick="updateData()">更新</button>
                         <button class="btn btn-danger" onclick="deleteData()">删除</button>
                         <button class="btn btn-info" onclick="readData()">读取</button>
                     </div>
+                    
                     <div class="button-group">
                         <button class="btn btn-primary" onclick="commitSpecificTransaction()">提交事务</button>
                         <button class="btn btn-secondary" onclick="rollbackSpecificTransaction()">回滚事务</button>

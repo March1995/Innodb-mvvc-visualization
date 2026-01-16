@@ -106,12 +106,7 @@ async function insertData() {
         const result = await response.json();
         if (result.success) {
             showMessage(`数据已插入，行ID: ${result.row_id}`, 'success');
-            
-            // 刷新系统状态并自动选择新插入的行
             refreshSystemState();
-            setTimeout(() => {
-                showVersionChain(result.row_id);
-            }, 100); // 短暂延迟以确保UI更新完成
         } else {
             showMessage('插入失败: ' + result.error, 'error');
         }
@@ -142,12 +137,7 @@ async function updateData() {
         const result = await response.json();
         if (result.success) {
             showMessage(`行 ${rowId} 已更新`, 'success');
-            
-            // 刷新系统状态并自动选择被更新的行
             refreshSystemState();
-            setTimeout(() => {
-                showVersionChain(rowId);
-            }, 100); // 短暂延迟以确保UI更新完成
         } else {
             showMessage('更新失败: ' + result.error, 'error');
         }
@@ -176,16 +166,7 @@ async function deleteData() {
         const result = await response.json();
         if (result.success) {
             showMessage(`行 ${rowId} 已删除`, 'success');
-            
-            // 隐藏读取结果展示区
-            const readResultDiv = document.getElementById('readResult');
-            readResultDiv.style.display = 'none';
-            
-            // 刷新系统状态并自动选择被删除的行
             refreshSystemState();
-            setTimeout(() => {
-                showVersionChain(rowId);
-            }, 100); // 短暂延迟以确保UI更新完成
         } else {
             showMessage('删除失败: ' + result.error, 'error');
         }
@@ -213,39 +194,24 @@ async function readData() {
 
         const result = await response.json();
         if (result.success) {
-            // 在按钮旁边显示读取结果
-            const readResultDiv = document.getElementById('readResult');
-            const readResultContent = document.getElementById('readResultContent');
-            
             if (result.data) {
-                readResultContent.innerHTML = `<div class="read-result-content">${JSON.stringify(result.data)}</div>`;
                 showMessage(`读取成功: ${JSON.stringify(result.data)}`, 'success');
-            } else {
-                readResultContent.innerHTML = `<div class="read-result-content">该行数据对当前事务不可见</div>`;
-                showMessage('该行数据对当前事务不可见', 'info');
-            }
-            
-            readResultDiv.style.display = 'block';
-            
-            // 检查是否需要显示读取路径弹窗
-            const showReadPathCheckbox = document.getElementById('showReadPath');
-            if (showReadPathCheckbox.checked && result.path) {
+                
                 // 显示读取路径（弹窗形式）
                 displayReadPath(result.path, rowId, trxId);
+            } else {
+                showMessage('该行数据对当前事务不可见', 'info');
+                
+                // 即使数据不可见，也显示读取路径（弹窗形式）
+                if (result.path) {
+                    displayReadPath(result.path, rowId, trxId);
+                }
             }
         } else {
             showMessage('读取失败: ' + result.error, 'error');
-            
-            // 隐藏读取结果展示区
-            const readResultDiv = document.getElementById('readResult');
-            readResultDiv.style.display = 'none';
         }
     } catch (error) {
         showMessage('读取失败: ' + error.message, 'error');
-        
-        // 隐藏读取结果展示区
-        const readResultDiv = document.getElementById('readResult');
-        readResultDiv.style.display = 'none';
     }
 }
 
@@ -473,6 +439,10 @@ async function rollbackSpecificTransaction() {
         return;
     }
 
+    // 隐藏读取选项和结果
+    document.getElementById('readOptions').style.display = 'none';
+    document.getElementById('readResult').style.display = 'none';
+    
     try {
         const response = await fetch(`${API_BASE}/transaction/rollback`, {
             method: 'POST',
@@ -527,19 +497,11 @@ async function refreshSystemState() {
             }
         });
 
-        // 检查选中的行是否被修改或删除
+        // 检查选中的行是否被修改
         let shouldRefreshVersionChain = false;
-        let shouldClearVersionChain = false;
-
         if (selectedRowId !== null) {
-            // 检查选中的行是否还存在
-            const rowExists = state.rows.some(row => row.row_id === selectedRowId);
-
-            if (!rowExists) {
-                // 行已被删除，需要清空版本链显示
-                shouldClearVersionChain = true;
-            } else if (currentModifiedRows.has(selectedRowId) && !lastModifiedRows.has(selectedRowId)) {
-                // 如果选中的行在本次刷新中被修改了（且上次没有被修改），则需要刷新版本链
+            // 如果选中的行在本次刷新中被修改了（且上次没有被修改），则需要刷新版本链
+            if (currentModifiedRows.has(selectedRowId) && !lastModifiedRows.has(selectedRowId)) {
                 shouldRefreshVersionChain = true;
             }
         }
@@ -555,14 +517,8 @@ async function refreshSystemState() {
         renderUndoLogs(state.undo_logs);
         renderReadViews(state.transactions.active);
 
-        // 处理版本链显示
-        if (shouldClearVersionChain) {
-            // 清空版本链显示
-            const container = document.getElementById('versionChain');
-            container.innerHTML = '<p style="color: #718096; text-align: center;">该数据行已被删除</p>';
-            selectedRowId = null; // 清除选中状态
-        } else if (shouldRefreshVersionChain && selectedRowId !== null) {
-            // 只在选中行被修改时才刷新版本链
+        // 只在选中行被修改时才刷新版本链
+        if (shouldRefreshVersionChain && selectedRowId !== null) {
             showVersionChain(selectedRowId);
         }
 
@@ -765,7 +721,7 @@ function renderDataRows(rows) {
                             title="点击查看版本链">
                             <td class="innodb-value">${row.row_id}</td>
                             <td class="innodb-value ${row.trx_id ? '' : 'null-value'}">${row.trx_id || 'NULL'}</td>
-                            <td class="innodb-value ${row.display_roll_pointer ? '' : 'null-value'}">${row.display_roll_pointer || 'NULL'}</td>
+                            <td class="innodb-value ${row.roll_pointer ? '' : 'null-value'}">${row.roll_pointer || 'NULL'}</td>
                             ${dataColumns.map(col => `
                                 <td class="user-value">${row.data[col] !== undefined ? JSON.stringify(row.data[col]) : 'NULL'}</td>
                             `).join('')}
@@ -791,90 +747,29 @@ function renderUndoLogs(undoLogs) {
         return;
     }
 
-    // 按row_id分组Undo日志，构建版本链
-    const undoByRow = {};
-    undoLogs.forEach(log => {
-        if (!undoByRow[log.row_id]) {
-            undoByRow[log.row_id] = [];
-        }
-        undoByRow[log.row_id].push(log);
-    });
-
-    // 为每个row_id构建版本链
-    let html = '';
-    Object.keys(undoByRow).forEach(rowId => {
-        const rowUndos = undoByRow[rowId];
-
-        // 按undo_id降序排列（最新的在前）
-        rowUndos.sort((a, b) => b.undo_id - a.undo_id);
-
-        html += `
-            <div class="undo-chain-container">
-                <div class="undo-chain-header">
-                    <h4>行 #${rowId} 的版本链</h4>
-                    <span class="undo-chain-count">${rowUndos.length} 个版本</span>
-                </div>
-                <div class="undo-chain-list">
-        `;
-
-        rowUndos.forEach((log, index) => {
-            const hasNext = index < rowUndos.length - 1;
-
-            html += `
-                <div class="undo-log-with-arrow">
-                    <div class="undo-log">
-                        <!-- Undo Log Header: 关键MVCC字段 -->
-                        <div class="undo-log-header-section">
-                            <div class="undo-log-header-title">
-                                <span class="undo-log-type ${log.log_type}">${log.log_type}</span>
-                                <span class="undo-log-id">Undo Log #${log.undo_id}</span>
-                            </div>
-                            <div class="undo-log-header-fields">
-                                <div class="header-field">
-                                    <span class="field-label">TRX_ID</span>
-                                    <span class="field-value">${log.trx_id}</span>
-                                </div>
-                                <div class="header-field">
-                                    <span class="field-label">ROLL_PTR</span>
-                                    <span class="field-value">${log.roll_pointer ? `→ #${log.roll_pointer}` : 'NULL'}</span>
-                                </div>
-                                <div class="header-field">
-                                    <span class="field-label">ROW_ID</span>
-                                    <span class="field-value">#${log.row_id}</span>
-                                </div>
-                                <div class="header-field">
-                                    <span class="field-label">TYPE</span>
-                                    <span class="field-value">${log.log_type}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Undo Log Body: 记录的旧值（用于回滚和MVCC） -->
-                        <div class="undo-log-body">
-                            ${log.log_type === 'INSERT' ? `
-                                <div class="undo-log-data">
-                                    <strong>记录:</strong> 主键 ROW_ID=#${log.row_id}（回滚时删除此行）
-                                </div>
-                            ` : ''}
-                            ${log.old_value ? `
-                                <div class="undo-log-data">
-                                    <strong>旧值:</strong> ${JSON.stringify(log.old_value)}
-                                </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                    ${hasNext ? '<div class="version-chain-arrow">↓</div>' : ''}
-                </div>
-            `;
-        });
-
-        html += `
-                </div>
+    container.innerHTML = undoLogs.slice(-20).reverse().map(log => `
+        <div class="undo-log">
+            <div class="undo-log-header">
+                <span class="undo-log-type ${log.log_type}">${log.log_type}</span>
+                <span style="font-size: 0.85em; color: #718096;">Undo #${log.undo_id}</span>
             </div>
-        `;
-    });
-
-    container.innerHTML = html;
+            <div class="undo-log-info">
+                <div>事务ID: ${log.trx_id}</div>
+                <div>行ID: ${log.row_id}</div>
+                <div>Roll Pointer: ${log.roll_pointer || 'NULL'}</div>
+            </div>
+            ${log.old_value ? `
+                <div class="undo-log-data">
+                    <strong>旧值:</strong> ${JSON.stringify(log.old_value)}
+                </div>
+            ` : ''}
+            ${log.new_value ? `
+                <div class="undo-log-data">
+                    <strong>新值:</strong> ${JSON.stringify(log.new_value)}
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
 }
 
 // 渲染ReadView
@@ -923,21 +818,9 @@ async function showVersionChain(rowId) {
         selectedRowId = rowId;
 
         const response = await fetch(`${API_BASE}/row/${rowId}`);
-
-        // 如果行不存在（404），清空版本链显示
-        if (response.status === 404) {
-            const container = document.getElementById('versionChain');
-            container.innerHTML = '<p style="color: #718096; text-align: center;">该数据行已被删除或不存在</p>';
-            selectedRowId = null; // 清除选中状态
-            return;
-        }
-
         const data = await response.json();
 
         if (!data || !data.version_chain) {
-            const container = document.getElementById('versionChain');
-            container.innerHTML = '<p style="color: #718096; text-align: center;">点击数据行查看版本链</p>';
-            selectedRowId = null; // 清除选中状态
             return;
         }
 
@@ -968,9 +851,6 @@ async function showVersionChain(rowId) {
                     // 版本序号：越新的版本序号越大（现在最新的在最上面）
                     const versionNumber = versions.length - index;
 
-                    // 提取用户数据列
-                    const dataColumns = Object.keys(version.data);
-                    
                     return `
                         <div class="version-node-enhanced">
                             <!-- Version Header -->
@@ -979,32 +859,34 @@ async function showVersionChain(rowId) {
                                 <span class="version-trx">事务 #${version.trx_id}</span>
                                 <span class="version-time">${new Date(version.timestamp).toLocaleString()}</span>
                             </div>
-                            
-                            <!-- 版本数据表格形式 (类似数据行列表) -->
-                            <div class="data-table-container">
-                                <table class="data-table version-table">
-                                    <thead>
-                                        <tr>
-                                            <th class="innodb-col">DB_ROW_ID</th>
-                                            <th class="innodb-col">DB_TRX_ID</th>
-                                            <th class="innodb-col">DB_ROLL_PTR</th>
-                                            ${dataColumns.map(col => `<th class="user-col">${col}</th>`).join('')}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr class="data-table-row">
-                                            <td class="innodb-value">${rowId}</td>
-                                            <td class="innodb-value">${version.trx_id}</td>
-                                            <td class="innodb-value ${undoLog && undoLog.roll_pointer ? '' : 'null-value'}">${undoLog && undoLog.roll_pointer ? undoLog.roll_pointer : 'NULL'}</td>
-                                            ${dataColumns.map(col => `
-                                                <td class="user-value">${version.data[col] !== undefined ? JSON.stringify(version.data[col]) : 'NULL'}</td>
-                                            `).join('')}
-                                        </tr>
-                                    </tbody>
-                                </table>
+
+                            <!-- InnoDB Hidden Fields -->
+                            <div class="version-hidden-fields">
+                                <div class="hidden-fields-title">InnoDB 隐藏字段</div>
+                                <div class="hidden-field-row">
+                                    <span class="hidden-field-label">DB_TRX_ID:</span>
+                                    <span class="hidden-field-value">${version.trx_id}</span>
+                                </div>
+                                <div class="hidden-field-row">
+                                    <span class="hidden-field-label">DB_ROLL_PTR:</span>
+                                    <span class="hidden-field-value">${undoLog ? undoLog.roll_pointer || 'NULL' : 'NULL'}</span>
+                                </div>
                             </div>
 
-                            <!-- Undo Log 信息 -->
+                            <!-- Data Content as Table -->
+                            <div class="version-data-section">
+                                <div class="version-data-label">用户数据:</div>
+                                <div class="version-data-table">
+                                    ${Object.entries(version.data).map(([key, value]) => `
+                                        <div class="version-data-row">
+                                            <span class="data-key">${key}:</span>
+                                            <span class="data-value">${typeof value === 'object' ? JSON.stringify(value) : value}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- Pointer Information -->
                             ${undoLog ? `
                                 <div class="version-pointer-section">
                                     <div class="pointer-info-grid">
@@ -1036,6 +918,24 @@ async function showVersionChain(rowId) {
                                     </div>
                                 </div>
                             ` : ''}
+
+                            <!-- Arrow Connector -->
+                            ${hasNext ? `
+                                <div class="version-arrow-connector">
+                                    <div class="arrow-line"></div>
+                                    <div class="arrow-head">▼</div>
+                                    <div class="arrow-label">
+                                        ${undoLog && undoLog.roll_pointer ?
+                                            `通过 roll_pointer 指向历史版本` :
+                                            '版本链连接'}
+                                    </div>
+                                </div>
+                            ` : `
+                                <div class="version-chain-end">
+                                    <div class="end-marker">⬛</div>
+                                    <div class="end-label">版本链末端</div>
+                                </div>
+                            `}
                         </div>
                     `;
                 }).join('')}
@@ -1207,7 +1107,7 @@ async function renderSplitData(containerId, transaction) {
                     </div>
                     <div class="hidden-field">
                         <span class="hidden-field-label">DB_ROLL_PTR</span>
-                        <span class="hidden-field-value">${row.display_roll_pointer || 'NULL'}</span>
+                        <span class="hidden-field-value">${row.roll_pointer || 'NULL'}</span>
                     </div>
                 </div>
 
