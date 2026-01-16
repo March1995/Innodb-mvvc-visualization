@@ -7,6 +7,7 @@ let currentViewMode = 'normal'; // 'normal' 或 'split'
 let systemState = null;
 let selectedRowId = null; // 当前选中的行ID
 let lastModifiedRows = new Set(); // 上次刷新时被修改的行集合
+let lastUndoLogCount = 0; // 上次Undo Log数量，用于检测回滚
 
 // 全局变量存储路径数据
 let currentPathData = null;
@@ -527,6 +528,11 @@ async function refreshSystemState() {
             }
         });
 
+        // 检查Undo Log是否发生变化（用于检测回滚）
+        const currentUndoLogCount = state.undo_logs.length;
+        const undoLogChanged = lastUndoLogCount !== currentUndoLogCount;
+        lastUndoLogCount = currentUndoLogCount;
+
         // 检查选中的行是否被修改或删除
         let shouldRefreshVersionChain = false;
         let shouldClearVersionChain = false;
@@ -540,6 +546,9 @@ async function refreshSystemState() {
                 shouldClearVersionChain = true;
             } else if (currentModifiedRows.has(selectedRowId) && !lastModifiedRows.has(selectedRowId)) {
                 // 如果选中的行在本次刷新中被修改了（且上次没有被修改），则需要刷新版本链
+                shouldRefreshVersionChain = true;
+            } else if (undoLogChanged) {
+                // 如果Undo Log发生变化（可能是回滚），也需要刷新版本链
                 shouldRefreshVersionChain = true;
             }
         }
