@@ -25,6 +25,46 @@ function showMessage(message, type = 'info') {
     }, 3000);
 }
 
+function initPrincipleToggles() {
+    const cards = document.querySelectorAll('.principle-card-collapsible');
+    if (!cards.length) {
+        return;
+    }
+
+    cards.forEach((card) => {
+        const key = card.getAttribute('data-principle') || 'default';
+        const toggleBtn = card.querySelector('.principle-toggle');
+        const storageBase = `mvcc_principle_${key}`;
+
+        const collapsedStored = localStorage.getItem(`${storageBase}_collapsed`);
+        const savedCollapsed = collapsedStored === '1';
+
+        if (collapsedStored !== null) {
+            if (savedCollapsed) {
+                card.classList.add('collapsed');
+            } else {
+                card.classList.remove('collapsed');
+            }
+        }
+
+        const updateToggleLabel = () => {
+            if (!toggleBtn) return;
+            toggleBtn.textContent = card.classList.contains('collapsed') ? '展开' : '收起';
+        };
+
+        updateToggleLabel();
+
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                card.classList.toggle('collapsed');
+                const isCollapsed = card.classList.contains('collapsed');
+                localStorage.setItem(`${storageBase}_collapsed`, isCollapsed ? '1' : '0');
+                updateToggleLabel();
+            });
+        }
+    });
+}
+
 // 开启新事务
 async function beginTransaction() {
     const isolationLevel = document.getElementById('isolationLevel').value;
@@ -92,7 +132,7 @@ async function insertData() {
     const dataStr = document.getElementById('opData').value;
 
     if (!trxId || !dataStr) {
-        showMessage('请输入事务ID和数据', 'error');
+        showMessage('请选择事务并输入数据', 'error');
         return;
     }
 
@@ -128,7 +168,7 @@ async function updateData() {
     const dataStr = document.getElementById('opData').value;
 
     if (!trxId || !rowId || !dataStr) {
-        showMessage('请输入事务ID、行ID和数据', 'error');
+        showMessage('请选择事务并输入行ID和数据', 'error');
         return;
     }
 
@@ -163,7 +203,7 @@ async function deleteData() {
     const rowId = parseInt(document.getElementById('opRowId').value);
 
     if (!trxId || !rowId) {
-        showMessage('请输入事务ID和行ID', 'error');
+        showMessage('请选择事务并输入行ID', 'error');
         return;
     }
 
@@ -201,7 +241,7 @@ async function readData() {
     const rowId = parseInt(document.getElementById('opRowId').value);
 
     if (!trxId || !rowId) {
-        showMessage('请输入事务ID和行ID', 'error');
+        showMessage('请选择事务并输入行ID', 'error');
         return;
     }
 
@@ -252,8 +292,15 @@ async function readData() {
 
 // 显示读取路径
 function displayReadPath(path, rowId, trxId) {
+    if (!Array.isArray(path) || path.length === 0) {
+        showMessage('读取路径为空或格式不正确', 'info');
+        return;
+    }
+
+    const filteredPath = filterReadPath(path);
+
     // 保存当前路径数据供导出函数使用
-    currentPathData = path;
+    currentPathData = filteredPath;
     currentRowId = rowId;
     currentTrxId = trxId;
     
@@ -264,6 +311,10 @@ function displayReadPath(path, rowId, trxId) {
         overlay.id = 'readPathOverlay';
         overlay.className = 'modal-overlay';
         document.body.appendChild(overlay);
+    }
+    if (!overlay.dataset.bound) {
+        overlay.addEventListener('click', closeReadPathModal);
+        overlay.dataset.bound = '1';
     }
 
     // 创建弹窗内容
@@ -285,7 +336,7 @@ function displayReadPath(path, rowId, trxId) {
             <div class="read-path-steps">
     `;
 
-    path.forEach((step, index) => {
+    filteredPath.forEach((step, index) => {
         let stepClass = '';
         let stepIcon = '';
         let stepTitle = '';
@@ -347,7 +398,7 @@ function displayReadPath(path, rowId, trxId) {
     pathHtml += `
             </div>
             <div class="path-summary">
-                <p><strong>总步数:</strong> ${path.length} 步</p>
+                <p><strong>总步数:</strong> ${filteredPath.length} 步</p>
                 <p><small>✅ = 可见, ❌ = 不可见, ⚠️ = 错误</small></p>
             </div>
         </div>
@@ -360,6 +411,41 @@ function displayReadPath(path, rowId, trxId) {
     modal.innerHTML = pathHtml;
     overlay.style.display = 'block';
     modal.style.display = 'block';
+}
+
+function filterReadPath(path) {
+    if (!Array.isArray(path) || path.length === 0) {
+        return [];
+    }
+
+    const first = path[0];
+    if (!first || first.type !== 'current') {
+        return path.slice();
+    }
+
+    const currentTrxId = first.trx_id;
+    const currentData = first.data ? JSON.stringify(first.data) : null;
+
+    const filtered = [];
+    let skippedLatestUndo = false;
+
+    path.forEach((step, index) => {
+        if (
+            !skippedLatestUndo &&
+            index > 0 &&
+            step.type === 'undo_log' &&
+            step.trx_id === currentTrxId
+        ) {
+            const oldValue = step.old_value ? JSON.stringify(step.old_value) : null;
+            if (!oldValue || oldValue === currentData) {
+                skippedLatestUndo = true;
+                return;
+            }
+        }
+        filtered.push(step);
+    });
+
+    return filtered;
 }
 
 // 导出读取路径
@@ -442,7 +528,7 @@ async function commitSpecificTransaction() {
     const trxId = parseInt(document.getElementById('opTrxId').value);
 
     if (!trxId) {
-        showMessage('请输入事务ID', 'error');
+        showMessage('请选择事务', 'error');
         return;
     }
 
@@ -470,7 +556,7 @@ async function rollbackSpecificTransaction() {
     const trxId = parseInt(document.getElementById('opTrxId').value);
 
     if (!trxId) {
-        showMessage('请输入事务ID', 'error');
+        showMessage('请选择事务', 'error');
         return;
     }
 
@@ -559,6 +645,7 @@ async function refreshSystemState() {
         systemState = state; // 保存全局状态
 
         renderActiveTransactions(state.transactions.active);
+        updateOpTrxSelect(state.transactions.active);
         renderCommittedTransactions(state.transactions.committed);
         renderDataRows(state.rows);
         renderUndoLogs(state.undo_logs);
@@ -581,6 +668,35 @@ async function refreshSystemState() {
         }
     } catch (error) {
         console.error('刷新状态失败:', error);
+    }
+}
+
+function updateOpTrxSelect(activeTransactions) {
+    const input = document.getElementById('opTrxId');
+    const datalist = document.getElementById('activeTrxOptions');
+    if (!input || !datalist) {
+        return;
+    }
+
+    const previousValue = input.value.trim();
+    const hasPrevious = activeTransactions.some(trx => String(trx.trx_id) === String(previousValue));
+
+    const options = [];
+    activeTransactions.forEach(trx => {
+        options.push(`<option value="${trx.trx_id}">事务 #${trx.trx_id} (${trx.isolation_level})</option>`);
+    });
+
+    datalist.innerHTML = options.join('');
+
+    if (activeTransactions.length === 0) {
+        input.disabled = false;
+        return;
+    }
+
+    if (!previousValue) {
+        input.value = String(activeTransactions[0].trx_id);
+    } else if (!hasPrevious) {
+        input.value = previousValue;
     }
 }
 
@@ -963,6 +1079,41 @@ async function showVersionChain(rowId) {
         // 反转版本数组，使最新的版本显示在最上面
         const reversedVersions = [...versions].reverse();
 
+        // 构建Undo Log链顺序（优先按roll_pointer串起来）
+        const undoOrder = [];
+        if (undoChain.length > 0) {
+            const byId = new Map();
+            const referenced = new Set();
+            undoChain.forEach(undo => {
+                byId.set(undo.undo_id, undo);
+                if (undo.roll_pointer) {
+                    referenced.add(undo.roll_pointer);
+                }
+            });
+
+            // 头节点：未被其它roll_pointer指向的undo
+            let head = undoChain.find(undo => !referenced.has(undo.undo_id));
+            if (!head) {
+                // fallback: 取undo_id最大的作为头
+                head = [...undoChain].sort((a, b) => b.undo_id - a.undo_id)[0];
+            }
+
+            const visited = new Set();
+            while (head && !visited.has(head.undo_id)) {
+                undoOrder.push(head);
+                visited.add(head.undo_id);
+                head = head.roll_pointer ? byId.get(head.roll_pointer) : null;
+            }
+
+            // 若链条未覆盖全部undo，补充剩余（按undo_id降序）
+            if (undoOrder.length < undoChain.length) {
+                const remaining = undoChain
+                    .filter(undo => !visited.has(undo.undo_id))
+                    .sort((a, b) => b.undo_id - a.undo_id);
+                undoOrder.push(...remaining);
+            }
+        }
+
         container.innerHTML = `
             <h3 style="margin-bottom: 15px; color: #667eea;">行 #${rowId} 的版本链</h3>
             <div class="version-chain-info">
@@ -1015,21 +1166,21 @@ async function showVersionChain(rowId) {
 
                             <!-- Undo Log 信息 -->
                             ${undoLog ? `
-                                <div class="version-pointer-section">
-                                    <div class="pointer-info-grid">
-                                        <div class="pointer-item">
-                                            <span class="pointer-label">🔑 Undo Log ID:</span>
-                                            <span class="pointer-value">${undoLog.undo_id}</span>
-                                        </div>
-                                        <div class="pointer-item">
-                                            <span class="pointer-label">📝 操作类型:</span>
-                                            <span class="pointer-value undo-type-${undoLog.log_type}">${undoLog.log_type}</span>
-                                        </div>
-                                        ${undoLog.roll_pointer ? `
-                                            <div class="pointer-item highlight">
-                                                <span class="pointer-label">⬅️ DB_ROLL_PTR:</span>
-                                                <span class="pointer-value roll-ptr">${undoLog.roll_pointer}</span>
-                                            </div>
+                        <div class="version-pointer-section">
+                            <div class="pointer-info-grid">
+                                <div class="pointer-item">
+                                    <span class="pointer-label">🔑 Undo Log ID:</span>
+                                    <span class="pointer-value">${undoLog.undo_id}</span>
+                                </div>
+                                <div class="pointer-item">
+                                    <span class="pointer-label">📝 操作类型:</span>
+                                    <span class="pointer-value undo-type-${undoLog.log_type}">${undoLog.log_type}</span>
+                                </div>
+                                ${undoLog.roll_pointer ? `
+                                    <div class="pointer-item highlight">
+                                        <span class="pointer-label">⬅️ DB_ROLL_PTR:</span>
+                                        <span class="pointer-value roll-ptr">${undoLog.roll_pointer}</span>
+                                    </div>
                                             <div class="pointer-description">
                                                 指向 Undo Log #${undoLog.roll_pointer} (上一个版本)
                                             </div>
@@ -1049,6 +1200,60 @@ async function showVersionChain(rowId) {
                     `;
                 }).join('')}
             </div>
+
+            ${undoOrder.length > 0 ? `
+                <div class="version-chain-undo">
+                    <h4>Undo Log 链（按 roll_pointer 串联）</h4>
+                    <div class="undo-chain-list">
+                        ${undoOrder.map((log, index) => {
+                            const hasNext = index < undoOrder.length - 1;
+                            return `
+                                <div class="undo-log-with-arrow">
+                                    <div class="undo-log">
+                                        <div class="undo-log-header-section">
+                                            <div class="undo-log-header-title">
+                                                <span class="undo-log-type ${log.log_type}">${log.log_type}</span>
+                                                <span class="undo-log-id">Undo Log #${log.undo_id}</span>
+                                            </div>
+                                            <div class="undo-log-header-fields">
+                                                <div class="header-field">
+                                                    <span class="field-label">TRX_ID</span>
+                                                    <span class="field-value">${log.trx_id}</span>
+                                                </div>
+                                                <div class="header-field">
+                                                    <span class="field-label">ROLL_PTR</span>
+                                                    <span class="field-value">${log.roll_pointer ? `→ #${log.roll_pointer}` : 'NULL'}</span>
+                                                </div>
+                                                <div class="header-field">
+                                                    <span class="field-label">ROW_ID</span>
+                                                    <span class="field-value">#${log.row_id}</span>
+                                                </div>
+                                                <div class="header-field">
+                                                    <span class="field-label">TYPE</span>
+                                                    <span class="field-value">${log.log_type}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="undo-log-body">
+                                            ${log.log_type === 'INSERT' ? `
+                                                <div class="undo-log-data">
+                                                    <strong>记录:</strong> 主键 ROW_ID=#${log.row_id}（回滚时删除此行）
+                                                </div>
+                                            ` : ''}
+                                            ${log.old_value ? `
+                                                <div class="undo-log-data">
+                                                    <strong>旧值:</strong> ${JSON.stringify(log.old_value)}
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                    ${hasNext ? '<div class="version-chain-arrow">↓</div>' : ''}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : ''}
         `;
     } catch (error) {
         console.error('获取版本链失败:', error);
@@ -1057,6 +1262,7 @@ async function showVersionChain(rowId) {
 
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', () => {
+    initPrincipleToggles();
     refreshSystemState();
 
     // 每3秒自动刷新一次
@@ -1070,12 +1276,20 @@ function toggleViewMode() {
     const mainContent = document.getElementById('mainContent');
     const splitViewContainer = document.getElementById('splitViewContainer');
     const viewModeText = document.getElementById('viewModeText');
+    const viewBtnNormal = document.querySelector('.view-btn-normal');
+    const viewBtnSplit = document.querySelector('.view-btn-split');
 
     if (currentViewMode === 'normal') {
         // 切换到分屏模式
         mainContent.style.display = 'none';
         splitViewContainer.style.display = 'block';
         viewModeText.textContent = '切换到普通模式';
+        if (viewBtnNormal) {
+            viewBtnNormal.style.display = 'none';
+        }
+        if (viewBtnSplit) {
+            viewBtnSplit.style.display = 'inline-flex';
+        }
         currentViewMode = 'split';
 
         // 初始化分屏视图
@@ -1087,6 +1301,12 @@ function toggleViewMode() {
         mainContent.style.display = 'grid';
         splitViewContainer.style.display = 'none';
         viewModeText.textContent = '切换到分屏对比模式';
+        if (viewBtnNormal) {
+            viewBtnNormal.style.display = 'inline-flex';
+        }
+        if (viewBtnSplit) {
+            viewBtnSplit.style.display = 'none';
+        }
         currentViewMode = 'normal';
     }
 }
@@ -1231,4 +1451,3 @@ async function renderSplitData(containerId, transaction) {
 
     container.innerHTML = dataHtml.join('');
 }
-

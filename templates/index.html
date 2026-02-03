@@ -6,56 +6,69 @@
     <title>InnoDB MVCC 可视化系统</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
-<body>
+<body class="dense">
     <div class="container">
         <header>
             <h1>InnoDB MVCC 可视化系统</h1>
             <p class="subtitle">多版本并发控制 (Multi-Version Concurrency Control) 演示</p>
         </header>
 
-        <!-- 核心原理说明 -->
-        <div class="core-principles">
-            <div class="principle-card">
-                <h3>🔍 ReadView 可见性规则</h3>
-                <div class="principle-content">
-                    <p><strong>规则1:</strong> trx_id == creator_trx_id → <span class="highlight-success">可见</span>（自己修改的数据）</p>
-                    <p><strong>规则2:</strong> trx_id &lt; min_trx_id → <span class="highlight-success">可见</span>（ReadView创建前已提交）</p>
-                    <p><strong>规则3:</strong> trx_id &gt; max_trx_id → <span class="highlight-error">不可见</span>（ReadView创建后才开始）</p>
-                    <p><strong>规则4:</strong> min_trx_id ≤ trx_id ≤ max_trx_id:</p>
-                    <ul>
-                        <li>trx_id in m_ids → <span class="highlight-error">不可见</span>（创建ReadView时还未提交）</li>
-                        <li>trx_id not in m_ids → <span class="highlight-success">可见</span>（创建ReadView时已提交）</li>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="principle-card">
-                <h3>🔗 版本链回溯原理</h3>
-                <div class="principle-content">
-                    <p><strong>步骤1:</strong> 检查当前版本是否可见（通过 DB_TRX_ID 判断）</p>
-                    <p><strong>步骤2:</strong> 如果不可见，通过 DB_ROLL_PTR 指向的 Undo Log 回溯</p>
-                    <p><strong>步骤3:</strong> 沿着 Undo Log 链向前查找，直到找到第一个可见的版本</p>
-                    <p><strong>关键点:</strong></p>
-                    <ul>
-                        <li>当前行数据是<span class="highlight-info">最新版本</span></li>
-                        <li>Undo Log 记录的是<span class="highlight-info">历史版本</span></li>
-                        <li>每个版本都有对应的事务ID，用于可见性判断</li>
-                        <li>版本链通过 roll_pointer 连接，形成完整的历史记录</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <!-- 视图模式切换 -->
-        <div class="view-mode-toggle">
-            <button class="btn btn-secondary" onclick="toggleViewMode()">
+        <!-- 视图模式切换（固定右上角） -->
+        <div class="view-mode-dock">
+            <button class="btn btn-secondary view-btn-normal" onclick="toggleViewMode()">
                 <span id="viewModeText">切换到分屏对比模式</span>
+            </button>
+            <button class="btn btn-secondary view-btn-split" onclick="toggleViewMode()" style="display: none;">
+                返回主视图
             </button>
         </div>
 
         <div class="main-content" id="mainContent">
             <!-- 左侧：事务控制面板 -->
             <div class="left-panel">
+                <!-- 核心原理说明 -->
+                <div class="core-principles">
+                    <div class="principle-card principle-card-collapsible collapsed" data-principle="readview">
+                        <div class="principle-header">
+                            <h3>🔍 ReadView 可见性规则</h3>
+                            <div class="principle-actions">
+                                <button class="btn btn-secondary btn-compact principle-toggle" type="button">展开</button>
+                            </div>
+                        </div>
+                        <div class="principle-content">
+                            <p><strong>规则1:</strong> trx_id == creator_trx_id → <span class="highlight-success">可见</span>（自己修改的数据）</p>
+                            <p><strong>规则2:</strong> trx_id &lt; min_trx_id → <span class="highlight-success">可见</span>（ReadView创建前已提交）</p>
+                            <p><strong>规则3:</strong> trx_id &gt; max_trx_id → <span class="highlight-error">不可见</span>（ReadView创建后才开始）</p>
+                            <p><strong>规则4:</strong> min_trx_id ≤ trx_id ≤ max_trx_id:</p>
+                            <ul>
+                                <li>trx_id in m_ids → <span class="highlight-error">不可见</span>（创建ReadView时还未提交）</li>
+                                <li>trx_id not in m_ids → <span class="highlight-success">可见</span>（创建ReadView时已提交）</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="principle-card principle-card-collapsible collapsed" data-principle="undo">
+                        <div class="principle-header">
+                            <h3>🔗 版本链回溯原理</h3>
+                            <div class="principle-actions">
+                                <button class="btn btn-secondary btn-compact principle-toggle" type="button">展开</button>
+                            </div>
+                        </div>
+                        <div class="principle-content">
+                            <p><strong>步骤1:</strong> 检查当前版本是否可见（通过 DB_TRX_ID 判断）</p>
+                            <p><strong>步骤2:</strong> 如果不可见，通过 DB_ROLL_PTR 指向的 Undo Log 回溯</p>
+                            <p><strong>步骤3:</strong> 沿着 Undo Log 链向前查找，直到找到第一个可见的版本</p>
+                            <p><strong>关键点:</strong></p>
+                            <ul>
+                                <li>当前行数据是<span class="highlight-info">最新版本</span></li>
+                                <li>Undo Log 记录的是<span class="highlight-info">历史版本</span></li>
+                                <li>每个版本都有对应的事务ID，用于可见性判断</li>
+                                <li>版本链通过 roll_pointer 连接，形成完整的历史记录</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="panel">
                     <h2>事务控制</h2>
                     <div class="control-group">
@@ -73,8 +86,9 @@
                     <h2>数据操作</h2>
                     
                     <div class="control-group">
-                        <label>事务ID:</label>
-                        <input type="number" id="opTrxId" placeholder="输入事务ID">
+                        <label>事务:</label>
+                        <input type="text" id="opTrxId" list="activeTrxOptions" placeholder="选择或输入事务ID">
+                        <datalist id="activeTrxOptions"></datalist>
                     </div>
                     
                     <div class="control-group">
@@ -118,6 +132,11 @@
                     <h2>活跃事务列表</h2>
                     <div id="activeTransactions" class="transaction-list"></div>
                 </div>
+
+                <div class="panel panel-compact">
+                    <h2>已提交事务</h2>
+                    <div id="committedTransactions" class="transaction-list compact"></div>
+                </div>
             </div>
 
             <!-- 中间：数据行和版本链展示 -->
@@ -145,10 +164,6 @@
                     <div id="undoLogs" class="undo-logs"></div>
                 </div>
 
-                <div class="panel">
-                    <h2>已提交事务</h2>
-                    <div id="committedTransactions" class="transaction-list"></div>
-                </div>
             </div>
         </div>
 

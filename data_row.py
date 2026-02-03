@@ -105,8 +105,9 @@ class VersionChain:
                 'undo_id': undo_log.undo_id,
                 'trx_id': undo_log.trx_id,
                 'log_type': undo_log.log_type.value,
+                # InnoDB undo log stores before-image; avoid exposing new_value as it is current version data
                 'old_value': undo_log.old_value.copy() if undo_log.old_value else None,
-                'new_value': undo_log.new_value.copy() if undo_log.new_value else None,
+                'new_value': None,
                 'roll_pointer': undo_log.roll_pointer,
                 'visible': visible,
                 'visibility_reason': visibility_reason
@@ -118,8 +119,8 @@ class VersionChain:
                 # 需要返回该事务修改后的数据
 
                 if undo_log.log_type == UndoLogType.INSERT:
-                    # INSERT操作：new_value是插入的数据
-                    return undo_log.new_value.copy() if undo_log.new_value else None, path
+                    # INSERT操作：没有更早版本，Undo记录仅用于回滚插入
+                    return None, path
 
                 elif undo_log.log_type == UndoLogType.UPDATE:
                     # UPDATE操作：需要返回该事务修改后的数据

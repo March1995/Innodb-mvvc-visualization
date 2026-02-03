@@ -1,254 +1,90 @@
 # InnoDB MVCC 可视化系统
 
-一个完整的InnoDB MVCC（多版本并发控制）可视化系统，完全符合InnoDB的实现规范，用于教学和演示MVCC的工作原理。
+一个用于教学与演示的 InnoDB MVCC（多版本并发控制）可视化 Web 应用，包含事务、ReadView、Undo Log、版本链与可见性判断等核心概念的直观展示。
 
----
+## 功能亮点
 
-## ✨ 核心特性
+- 事务管理：开启、提交、回滚，支持 `READ COMMITTED` 与 `REPEATABLE READ`
+- 数据操作：插入、更新、删除、读取，并记录操作历史
+- ReadView 可视化：展示活跃事务列表、`min_trx_id`、`max_trx_id`
+- 版本链与 Undo Log 展示：跟踪 `roll_pointer` 回溯路径
+- 读取路径追踪：读操作可弹窗显示可见性判断过程并支持导出
+- 分屏对比视图：同时对比两个事务的 ReadView 与可见数据
+- 一键重置：清空系统状态，便于重复演示
 
-### 1. 完全符合InnoDB规范
-
-- ✅ **ReadView创建时机正确** - READ COMMITTED每次SELECT创建，REPEATABLE READ首次创建后复用
-- ✅ **ReadView可见性判断正确** - 使用`Transaction._next_trx_id`作为max_trx_id
-- ✅ **DB_ROLL_PTR语义正确** - INSERT后显示NULL，UPDATE后显示上一个版本
-- ✅ **版本链完整可追溯** - 通过ROLL_PTR串联所有历史版本
-
-### 2. Undo Log Header可视化
-
-展示关键MVCC字段：**TRX_ID**（事务ID）、**ROLL_PTR**（回滚指针）、**ROW_ID**（行ID）、**TYPE**（操作类型）
-
-```
-╔══════════════════════════════════════════════╗
-║  UPDATE          Undo Log #3                 ║
-╠══════════════════════════════════════════════╣
-║  TRX_ID: 3      │ ROLL_PTR: → #2            ║
-║  ROW_ID: #1     │ TYPE: UPDATE              ║
-╚══════════════════════════════════════════════╝
-旧值: {'name': 'Alice', 'age': 26}
-```
-
-**符合InnoDB实现：**
-- INSERT: 只记录主键（回滚时删除此行）
-- UPDATE: 只记录旧值（回滚和MVCC使用）
-- DELETE: 只记录旧值（回滚恢复使用）
-
-### 3. 版本链可视化
-
-- 按行ID分组展示
-- 从最新到最早排序
-- 使用箭头（↓）连接相邻版本
-- Roll Pointer可视化（→ Undo #X）
-
-### 4. 完整的事务管理
-
-- 支持INSERT/UPDATE/DELETE操作
-- 支持事务提交/回滚（回滚该事务的所有操作）
-- INSERT回滚完全清理（数据行、版本链、Undo日志）
-- 支持READ COMMITTED/REPEATABLE READ隔离级别
-
----
-
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-pip install flask
+pip install -r requirements.txt
 ```
 
-### 2. 启动系统
+### 2. 启动服务
 
 ```bash
 python app.py
 ```
 
-访问 http://127.0.0.1:5001
+默认访问地址：`http://127.0.0.1:5001`
 
-### 3. 基本操作
+## 使用说明
 
-**创建版本链：**
-1. 点击"开启事务"
-2. 输入数据：`{"name": "Alice", "age": 25}`
-3. 点击"插入"
-4. 点击"提交"
-5. 查看Undo Log区域的版本链
+### 基本流程示例
 
-**测试回滚：**
-1. 开启事务
-2. 进行多次UPDATE操作
-3. 点击"回滚"
-4. 观察数据和版本链恢复到事务开始前的状态
+1. 开启事务（可选择隔离级别）
+2. 使用事务 ID 进行插入/更新/删除
+3. 读取数据，查看可见性判断结果
+4. 通过版本链和 Undo Log 观察历史版本
+5. 提交或回滚事务
 
----
+### 读取路径追踪
 
-## 📊 演示场景
+- 勾选“显示读取路径追踪弹窗”后执行读取
+- 弹窗中展示当前版本与 Undo 日志链的可见性判断
+- 点击“导出路径”可下载追踪报告
 
-### 场景1：验证READ COMMITTED
+### 分屏对比
 
-```
-1. 事务1插入数据并提交
-2. 事务2（READ COMMITTED）读取数据
-3. 事务3更新数据并提交
-4. 事务2再次读取
+- 点击右上角“切换到分屏对比模式”
+- 选择两个事务进行对比查看 ReadView 与可见数据
 
-结果：事务2能看到事务3的更新 ✓
-```
-
-### 场景2：验证REPEATABLE READ
-
-```
-1. 事务1插入数据并提交
-2. 事务2（REPEATABLE READ）读取数据
-3. 事务3更新数据并提交
-4. 事务2再次读取
-
-结果：事务2看到原来的数据（不受事务3影响）✓
-```
-
-### 场景3：验证事务回滚
-
-```
-1. 开启事务
-2. 进行3次UPDATE操作（age: 20→21→22→23）
-3. 回滚事务
-
-结果：
-- 数据恢复到age=20 ✓
-- 该事务的所有Undo日志被删除 ✓
-- 版本链自动刷新 ✓
-```
-
----
-
-## 🏗️ 系统架构
-
-```
-Web界面 (Flask + HTML/CSS/JS)
-         ↓
-    MVCC System
-         ↓
-┌────────┴────────┐
-│  事务管理        │  ReadView管理
-│  数据行管理      │  Undo日志管理
-│  版本链管理      │  可见性判断
-└─────────────────┘
-```
-
----
-
-## 📁 项目结构
+## 项目结构
 
 ```
 Innodb-mvvc-visualization/
-├── app.py                      # Flask Web服务器
-├── mvcc_system.py              # MVCC系统主逻辑
-├── transaction.py              # 事务和ReadView管理
-├── data_row.py                 # 数据行和版本链管理
-├── undo_log.py                 # Undo日志管理
+├── app.py                      # Flask Web 入口与 API
+├── mvcc_system.py              # MVCC 逻辑整合
+├── transaction.py              # 事务与 ReadView
+├── data_row.py                 # 数据行、版本链
+├── undo_log.py                 # Undo Log
 ├── templates/
-│   └── index.html              # HTML模板
+│   └── index.html              # 前端页面
 ├── static/
 │   ├── js/
-│   │   └── app.js              # 前端JavaScript逻辑
+│   │   └── app.js              # 前端交互逻辑
 │   └── css/
-│       └── style.css           # 样式表
-└── README.md                   # 项目文档
+│       └── style.css           # 样式
+├── requirements.txt            # 依赖
+└── README.md
 ```
 
----
+## API 简览
 
-## 🎓 学习价值
+- `POST /api/transaction/begin` 开启事务
+- `POST /api/transaction/commit` 提交事务
+- `POST /api/transaction/rollback` 回滚事务
+- `POST /api/data/insert` 插入数据
+- `POST /api/data/update` 更新数据
+- `POST /api/data/delete` 删除数据
+- `POST /api/data/read_with_path` 读取数据并返回路径
+- `GET /api/system/state` 获取系统状态
+- `POST /api/system/reset` 重置系统
 
-### 理解MVCC核心概念
+## 截图
 
-- **多版本共存** - 通过Undo Log保存历史版本
-- **ReadView可见性** - 通过TRX_ID和活跃事务列表判断
-- **版本链回溯** - 通过ROLL_PTR串联历史版本
-- **事务隔离** - READ COMMITTED vs REPEATABLE READ的区别
+![MVCC原理](file/MVCC原理.png)
 
-### 理解InnoDB隐藏字段
+![多事务对比展示](file/多事务对比展示.png)
 
-- **DB_ROW_ID** - 行ID（主键）
-- **DB_TRX_ID** - 事务ID（最后修改此行的事务）
-- **DB_ROLL_PTR** - 回滚指针（指向Undo Log）
-
-### 理解Undo Log结构
-
-- **Header** - TRX_ID、ROLL_PTR、ROW_ID、TYPE
-- **Body** - 只记录旧值（新值在当前数据行中）
-- **版本链** - 通过ROLL_PTR串联所有历史版本
-
----
-
-## 🔧 技术实现要点
-
-### ReadView创建时机
-
-```python
-# READ COMMITTED: 每次读取创建新ReadView
-if trx.isolation_level == "READ_COMMITTED":
-    current_read_view = ReadView(trx.trx_id, active_trx_ids, Transaction._next_trx_id)
-
-# REPEATABLE READ: 第一次读取创建，之后复用
-else:
-    if not trx.read_view:
-        trx.read_view = ReadView(trx.trx_id, active_trx_ids, Transaction._next_trx_id)
-```
-
-### 事务回滚所有操作
-
-```python
-# 收集该事务对某行的所有Undo日志
-trx_undo_logs = [log for log in all_logs if log.trx_id == trx_id]
-
-# 按undo_id降序排列（从最新到最早）
-trx_undo_logs.sort(key=lambda x: x.undo_id, reverse=True)
-
-# 逐个回滚该事务的所有操作
-for undo_log in trx_undo_logs:
-    # 回滚INSERT/UPDATE/DELETE操作
-    ...
-```
-
-### DB_ROLL_PTR展示层转换
-
-```python
-# 内部实现：row.roll_pointer指向当前版本的Undo日志
-# 展示层：display_roll_pointer显示上一个版本
-
-if undo_log.log_type == 'INSERT':
-    return None  # INSERT显示NULL
-else:
-    return undo_log.roll_pointer  # UPDATE/DELETE显示上一个版本
-```
-
----
-
-## 💡 使用技巧
-
-1. **观察版本链形成** - 连续多次更新同一行，观察Undo Log区域版本链的增长
-2. **对比隔离级别** - 两个事务同时操作，对比READ COMMITTED和REPEATABLE READ的不同行为
-3. **追踪Roll Pointer** - 从最新版本一直追溯到INSERT，理解版本链回溯过程
-4. **测试回滚功能** - 进行多次操作后回滚，验证所有操作都被撤销
-
----
-
-## 🏆 系统特点
-
-- ✅ **完全符合InnoDB实现** - ReadView、可见性判断、DB_ROLL_PTR语义
-- ✅ **Undo Log Header可视化** - 清晰展示关键MVCC字段
-- ✅ **事务回滚完整** - 回滚该事务的所有操作
-- ✅ **版本链自动刷新** - 回滚后立即更新显示
-- ✅ **教学友好** - 清晰的可视化效果，易于理解MVCC原理
-
----
-
-## 📞 反馈
-
-如有问题或建议，欢迎提出！
-
----
-
-**版本：** 2.0.1
-**最后更新：** 2026-01-16
-**状态：** ✅ 生产就绪
+![系统功能展示](file/系统功能展示.png)
